@@ -1,0 +1,59 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ webmail['directories'] }}"
+
+- name: Copy Nginx Files For Webmail Subdomain
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ nginx['confd_dir_path'] }}/{{ domain['mail'] }}.conf"
+  
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes
+
+- name: Create Roundcube Database
+  postgresql_db:
+    name: "{{ webmail['database_name'] }}"
+    login_host: "{{ postgres['ip'] }}"
+    login_user: "{{ postgres['user'] }}"
+    login_password: "{{ postgres['password'] }}"
+
+- name: Copy Roundcube Config File To Host
+  template:
+    src: config.inc.php.j2
+    dest: "{{ docker_folder_path }}/webmail/files/config.inc.php"
+
+- name: Roundcube Docker Container
+  docker_container:
+    name: webmail
+    image: roundcube/roundcubemail:{{ webmail['version'] }}
+    state: started
+    hostname: webmail
+    env:
+      ROUNDCUBEMAIL_DEFAULT_HOST: "tls://{{ top_level_domain }}"
+      ROUNDCUBEMAIL_SMTP_SERVER: "tls://{{ top_level_domain }}"
+      ROUNDCUBEMAIL_SKIN: "elastic"
+      ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE: 15M
+      ROUNDCUBEMAIL_DB_TYPE: "pgsql"
+      ROUNDCUBEMAIL_DB_HOST: "{{ postgres['ip'] }}"
+      ROUNDCUBEMAIL_DB_USER: "{{ postgres['user'] }}"
+      ROUNDCUBEMAIL_DB_PASSWORD: "{{ postgres['password'] }}"
+      ROUNDCUBEMAIL_DB_NAME: "{{ webmail['database_name'] }}"
+    etc_hosts:
+      "{{ top_level_domain }}": "{{ mailserver['ip'] }}"
+    volumes:
+      - "{{ docker_folder_path }}/webmail/config/:/var/roundcube/config/:ro"
+      - "{{ docker_folder_path }}/webmail/files/config.inc.php:/var/www/html/config/config.inc.php:ro"
+    restart: yes
+    restart_policy: unless-stopped   
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ webmail['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes 
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"

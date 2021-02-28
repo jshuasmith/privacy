@@ -1,0 +1,10 @@
+[Interface]
+PrivateKey = {{ vpn_private_key['stdout'] }}
+Address = {{ vpn_profile_item.value.ip }}/{{ vpn['netmask'] }}
+DNS = {{ dns['ip'] }}
+
+[Peer]
+PublicKey = {{ vpn_server_key_public['content'] | b64decode }}
+AllowedIPs = 0.0.0.0/0
+Endpoint = {{ domain['vpn'] }}:{{ vpn['port'] }}
+PersistentKeepalive = 15

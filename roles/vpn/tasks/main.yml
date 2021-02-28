@@ -1,0 +1,141 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ vpn['directories'] }}"
+ 
+- name: Install EPEL Repositories 
+  package:
+    name:
+      - epel-release 
+      - elrepo-release
+    state: latest
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Enable IP Forwarding
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    sysctl_set: yes
+    state: present
+    reload: yes
+
+- name: Install Wireguard Repositories 
+  package:
+    name:
+      - kmod-wireguard 
+      - wireguard-tools
+      - firewalld
+    state: latest
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Install Wireguard Repositories 
+  package:
+    name:
+      - wireguard-tools
+    state: latest
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+
+- name: Create Wireguard Private Key
+  shell: "wg genkey" 
+  register: vpn_private_key
+
+- name: Write Wireguard Private Key File
+  copy:
+    dest: "{{ vpn['private_key'] }}"
+    content: "{{ vpn_private_key['stdout'] }}"
+    mode: 0600
+
+- name: Create Wireguard Public Key
+  shell: "cat {{ vpn['private_key'] }} | wg pubkey" 
+  register: vpn_public_key
+
+- name: Write Wireguard Public Key File
+  copy:
+    dest: "{{ vpn['public_key'] }}"
+    content: "{{ vpn_public_key['stdout'] }}"
+
+- name: Copy Wireguard Config File
+  template:
+    src: "wg0.conf.j2"
+    dest: "{{ vpn['config_file'] }}"
+    mode: 0600
+
+- name: Get Public Key Of Server
+  slurp:
+    src: "{{ vpn['public_key'] }}"
+  register: vpn_server_key_public
+  tags: [ "account_create" ]
+
+- name: Setup Wireguard VPN Container
+  docker_container:
+    name: vpn
+    image: masipcat/wireguard-go:{{ vpn['version'] }}
+    hostname: vpn.{{ top_level_domain }}
+    restart_policy: unless-stopped   
+    volumes:
+    - /dev/net/tun:/dev/net/tun
+    - "{{ docker_folder_path }}/vpn/config/:/etc/wireguard:ro"
+    published_ports:
+    - 500:500/udp
+    env:
+      WG_COLOR_MODE: always
+      LOG_LEVEL: info
+    capabilities:
+      - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 1
+    networks:
+    - name: "{{ docker_network['name'] }}"
+      ipv4_address: "{{ vpn['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+- name: Create Variable To Hold All Required VPN Profile Names 
+  set_fact: 
+    vpn_profiles_combined: "{{ vpn_profiles_combined + [item.value.vpn_profiles] }}"
+  loop: "{{ users | dict2items }}"
+  tags: [ "account_create" ]
+
+- name: Print vpn_profiles_combined List
+  set_fact:
+    vpn_profiles_combined_list: "{{ item | dict2items + vpn_profiles_combined_list }}"
+  loop: "{{ vpn_profiles_combined }}"
+  tags: [ "account_create" ]
+
+- name: Create Wireguard VPN Profiles For Users
+  include_tasks: 'vpn_generate_clients.yml' 
+  tags: [ "account_create" ]
+  loop: "{{ vpn_profiles_combined_list }}"
+  loop_control:
+    loop_var: vpn_profile_item
+
+- name: Copy VPN Profiles To Local Host
+  synchronize:
+    src: "{{ vpn['client_configs'] }}"
+    dest: support_material
+    mode: pull
+    recursive: yes
+    partial: yes
+  tags: [ "account_create" ]
+
+- name: Restart VPN Container
+  docker_container:
+    name: vpn
+    state: started
+    restart: yes
+
+- name: Enable VPN Port
+  firewalld:
+    port: "{{ vpn['port'] }}/udp"
+    permanent: true
+    state: enabled
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Restart Firewall Service
+  service:
+    name: firewalld
+    state: restarted
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'

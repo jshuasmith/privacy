@@ -1,0 +1,36 @@
+- hosts: localhost
+  tasks:
+    - name: "Preparing Challenges for Domains {{ ', '.join(letsencrypt['certificate_subject_alt_name']) }}"
+      acme_certificate:
+        account_key_src: "{{ letsencrypt['account_key'] }}"
+        csr: "{{ letsencrypt['csrs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.csr"
+        dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.pem"
+        chain_dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}-intermediate.crt"
+        fullchain_dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}-fullchain.crt"
+        account_email: "{{ letsencrypt['acme_email'] }}"
+        terms_agreed: "{{ letsencrypt['acme_terms_agreed'] }}"
+        challenge: "{{ letsencrypt['acme_challenge_type'] }}"
+        acme_directory: "{{ letsencrypt['acme_directory'] }}"
+        acme_version: "{{ letsencrypt['acme_version'] }}"
+        force: yes
+      register: challenge_http
+
+    - name: Copy Challenge Files to /.well-known/acme-challenge/  
+      copy:
+        dest: "{{ nginx['html_dir_path'] }}/{{ '{{' }} item.value['http-01']['resource'] {{ '}}' }}"
+        content: "{{ '{{' }} item.value['http-01']['resource_value'] {{ '}}' }}"
+      with_dict: "{{ '{{' }} challenge_http.challenge_data {{ '}}' }}"
+      when: challenge_http is changed
+
+    - name: Complete Letsencrypt Challenges
+      acme_certificate:
+        acme_directory: "{{ letsencrypt['acme_directory'] }}"
+        acme_version: "{{ letsencrypt['acme_version'] }}"
+        account_key: "{{ letsencrypt['account_key'] }}"
+        account_email: "{{ letsencrypt['acme_email'] }}"
+        challenge: "{{ letsencrypt['acme_challenge_type'] }}"
+        csr: "{{ letsencrypt['csrs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.csr"
+        dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.pem"
+        chain_dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}-intermediate.crt"
+        fullchain_dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}-fullchain.crt"
+        data: "{{ '{{' }} challenge_http {{ '}}' }}"  

@@ -1,0 +1,329 @@
+---
+- name: Deploy Privacy Stack
+  hosts: all
+  become: yes
+  remote_user: ubuntu
+
+  vars_files:
+    - "users.yml"
+
+  # Define Your Variables
+  vars:
+    ldap:
+      # If you register "example.com" then it would be name: example and tld: com"
+      name: domain 
+      tld: com 
+
+    docker_folder_path: /privacy
+    top_level_domain: "{{ ldap['name'] }}.{{ ldap['tld'] }}" 
+
+    host:
+      # Primary Interface
+      interface: "eth0"
+      # Set Username
+      username: user
+      # Swapfile Path
+      swap_file_path: /swapfile   
+      # Swapfile Size in Gigabyes
+      swap_file_size: 6            
+      # Server Hostname
+      name: "{{ top_level_domain }}"
+
+    domain:
+      # Root Domain
+      name: "{{ top_level_domain }}"
+      # Web Domain
+      web: www.{{ top_level_domain }}
+      # Email Domain
+      mail: mail.{{ top_level_domain }}
+      # VPN Domain
+      vpn: vpn.{{ top_level_domain }}
+      # Password Vault Domain
+      vault: vault.{{ top_level_domain }}
+      # Cloud Storage Domain
+      drive: drive.{{ top_level_domain }}
+      # # Chat Domain
+      chat: chat.{{ top_level_domain }}
+      # # Chat Protocol Domain
+      x: x.{{ top_level_domain }}
+      # Authentication Domain
+      # auth: auth.{{ top_level_domain }}
+      # Git Domain
+      git: git.{{ top_level_domain }}
+        
+    docker:
+      username: user
+      directories:
+        - "{{ docker_folder_path }}/"
+        - "{{ docker_folder_path }}/etc/"
+        - "{{ docker_folder_path }}/var/"
+        - "{{ docker_folder_path }}/data/"
+
+    backup:
+      file_path: "{{ docker_folder_path }}/backup/backup_{{ ansible_date_time.date }}.zip"
+      directories:
+        - "{{ docker_folder_path }}/backup"
+   
+    docker_network: 
+      name: privacy
+      subnet: 172.16.10.0/24
+      gateway: 172.16.10.1
+      iprange: 172.16.10.0/25   
+      
+    postgres:
+      version: "12.4" # Originally based on 12.3
+      password: "{{ lookup('password', 'support_material/credentials/password_postgres.txt length=16 chars=ascii_letters,digits') }}"
+      user: privacy
+      ip: 172.16.10.14
+      data_dir: "{{ docker_folder_path }}/postgres/data"
+      directories:
+        - "{{ docker_folder_path }}/postgres/data"
+        - "{{ docker_folder_path }}/postgres/init_scripts"
+
+    nginx:
+      version: "1.19.6" # Originally based on 1.19.0
+      ip: 172.16.10.15
+      html_dir_path: "{{ docker_folder_path }}/nginx/html"
+      confd_dir_path: "{{ docker_folder_path }}/nginx/conf.d"
+      conf_path: "{{ docker_folder_path }}/nginx/conf/nginx.conf"
+      directories:
+        - "{{ docker_folder_path }}/nginx/data/"
+        - "{{ docker_folder_path }}/nginx/log/"
+        - "{{ docker_folder_path }}/nginx/conf.d/"
+        - "{{ docker_folder_path }}/nginx/conf/"
+        - "{{ docker_folder_path }}/nginx/certificates/"
+        - '{{ docker_folder_path }}/etc/ssl/crt/'
+        - '{{ docker_folder_path }}/etc/ssl/private/'
+        - '{{ docker_folder_path }}/etc/ssl/csr/'
+     
+    letsencrypt:
+      acme_challenge_type: http-01
+      acme_directory: https://acme-v02.api.letsencrypt.org/directory
+      acme_version: 2
+      acme_email: "certificate-reminders@{{ top_level_domain }}"
+      acme_terms_agreed: yes
+      dir: "{{ docker_folder_path }}/letsencrypt"
+      keys_dir: "{{ docker_folder_path }}/letsencrypt/keys"
+      csrs_dir: "{{ docker_folder_path }}/letsencrypt/csrs"
+      certs_dir: "{{ docker_folder_path }}/letsencrypt/certs"
+      account_key: "{{ docker_folder_path }}/letsencrypt/account/account.key"
+      domain_name: "{{ top_level_domain }}"
+      certificate_common_name: "{{ top_level_domain }}"
+      certificate_subject_alt_name:
+        - "{{ domain['web'] }}"
+        - "{{ domain['mail'] }}"
+        - "{{ domain['vpn'] }}"
+        - "{{ domain['vault'] }}"
+        - "{{ domain['drive'] }}"
+        - "{{ domain['chat'] }}"
+        - "{{ domain['x'] }}"
+        - "{{ domain['git'] }}"
+
+      directories:
+        - "{{ docker_folder_path }}/letsencrypt/keys"
+        - "{{ docker_folder_path }}/letsencrypt/csrs"
+        - "{{ docker_folder_path }}/letsencrypt/certs"
+        - "{{ docker_folder_path }}/letsencrypt/account"
+        - "{{ docker_folder_path }}/nginx/html/.well-known/acme-challenge"
+        - "{{ docker_folder_path }}/letsencrypt/data"
+        - '{{ docker_folder_path }}/letsencrypt/files'
+
+    openldap:
+      version: "1.4.0" # Originally based on 1.4.0
+      ip: 172.16.10.19
+      admin_password: "{{ lookup('password', 'support_material/credentials/password_openldap_admin.txt length=16 chars=ascii_letters,digits') }}"
+      config_password: "{{ lookup('password', 'support_material/credentials/password_openldap_config.txt length=16 chars=ascii_letters,digits') }}"
+      organisation: "{{ top_level_domain }}"
+      user_search_base: "ou=users,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}"
+      read_only_user: ldap-ro
+      read_only_password: "{{ lookup('password', 'support_material/credentials/password_openldap_read_only.txt length=16 chars=ascii_letters,digits') }}"
+      ldif_postfix_file_dest: "{{ docker_folder_path }}/openldap/data/postfix-book.ldif"
+      data_dir: "{{ docker_folder_path }}/openldap/data/"
+      directories:
+        - "{{ docker_folder_path }}/openldap/data"
+        - "{{ docker_folder_path }}/openldap/config"
+        - "{{ docker_folder_path }}/openldap/slapd.d"
+    
+    ldap_auth:
+      server_uri: ldap://{{ openldap['ip'] }}/
+      bind_dn: cn=admin,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}
+      bind_pw: "{{ openldap['admin_password'] }}"
+
+    mailserver:
+      version: "release-v7.2.0" # Orginally based on release-v6.2.2
+      ip: 172.16.10.16
+      config_dir_path: "{{ docker_folder_path }}/mail/config"
+      backup_dir: "{{ docker_folder_path }}/mail/maildata"
+      postgrey: "1" # 1 - enable, 0 - disable
+      postmaster_password: "{{ lookup('password', 'support_material/credentials/password_mailserver_postmaster.txt length=16 chars=ascii_letters,digits') }}"
+      directories:
+        - '{{ docker_folder_path }}/mail'
+        - '{{ docker_folder_path }}/mail/maildata'
+        - '{{ docker_folder_path }}/mail/mailstate'
+        - '{{ docker_folder_path }}/mail/maillogs'
+        - '{{ docker_folder_path }}/mail/config'
+        - '{{ docker_folder_path }}/mail/dkim'
+
+    chat_web:
+      version: "v1.7.15"
+      ip: 172.16.10.18
+      directories: 
+        - '{{ docker_folder_path }}/chat-web'
+        - '{{ docker_folder_path }}/chat-web/config'
+
+    chat_server:
+      version: "v1.23.1"
+      ip: 172.16.10.17
+      registration_shared_secret: "{{ lookup('password', 'support_material/credentials/password_chat_registration_shared_secret.txt length=32 chars=ascii_letters,digits') }}"
+      macaroon_secret_key: "{{ lookup('password', 'support_material/credentials/password_chat_macaroon_secret_key.txt length=32 chars=ascii_letters,digits') }}"
+      form_secret: "{{ lookup('password', 'support_material/credentials/password_chat_form_secret.txt length=32 chars=ascii_letters,digits') }}"
+      directories:
+        - '{{ docker_folder_path }}/chat-server'
+        - '{{ docker_folder_path }}/chat-server/config'
+        - '{{ docker_folder_path }}/chat-server/data'
+
+    nextcloud:
+      ip: 172.16.10.20
+      version: "20.0.3-apache" # Originally based on 18.0.6
+      admin_user: privacy
+      admin_password: "{{ lookup('password', 'support_material/credentials/password_nextcloud_admin.txt length=16 chars=ascii_letters,digits') }}"
+      backup_dir: "{{ docker_folder_path }}/drive/data/data"
+      skeleton_dir: "{{ docker_folder_path }}/drive/data/data/core/skeleton"
+      directories:
+        - '{{ docker_folder_path }}/drive'
+        - '{{ docker_folder_path }}/drive/config'
+        - '{{ docker_folder_path }}/drive/data'
+        - '{{ docker_folder_path }}/drive/files'
+        - '{{ docker_folder_path }}/drive/skeleton'
+
+    vault:
+      ip: 172.16.10.21
+      version: "1.17.0" # Orginally based on 1.15.1
+      backup_dir: "{{ docker_folder_path }}/vault/data"
+      directories:
+        - '{{ docker_folder_path }}/vault'
+        - '{{ docker_folder_path }}/vault/config'
+        - '{{ docker_folder_path }}/vault/data'
+
+    web:
+      ip: 172.16.10.22
+      title: "Website"
+      description: "Welcome to My Website."
+      directories:
+        - '{{ docker_folder_path }}/web'
+        - '{{ docker_folder_path }}/web/config'
+        - '{{ docker_folder_path }}/web/data'
+        - '{{ docker_folder_path }}/web/cache'
+
+    vpn:
+      ip: 172.16.10.23
+      version: "0.0.20201118"
+      vpn_ip: "10.4.22.1"
+      port: "500"
+      peers: "10"
+      # Cloudflare DNS Servers
+      # 1.1.1.1 - no filtering
+      # 1.1.1.2 - no malware
+      # 1.1.1.3 - no malware, no adult content
+      peer_dns: "1.1.1.3"
+      internal_subnet: "10.4.22.0"
+      netmask: "24"
+      private_key: "{{ docker_folder_path }}/vpn/config/private.key"
+      public_key: "{{ docker_folder_path }}/vpn/config/public.key"
+      config_file: "{{ docker_folder_path }}/vpn/config/wg0.conf"
+      config_dir: "{{ docker_folder_path }}/vpn/config/"
+      client_configs: '{{ docker_folder_path }}/vpn/client_configs'
+      directories: 
+        - '{{ docker_folder_path }}/vpn'
+        - '{{ docker_folder_path }}/vpn/config'
+        - '{{ docker_folder_path }}/vpn/data'
+        - '{{ docker_folder_path }}/vpn/modules'
+        - '{{ docker_folder_path }}/vpn/client_configs'
+        - '/etc/wireguard'
+
+    vpn_profiles_combined: []
+    vpn_profiles_combined_list: []
+
+    auditbeat:
+      version: 7.10.1 # No "latest" tag available.
+      ip: 172.16.10.24
+      directories:
+        - '{{ docker_folder_path }}/auditbeat'
+        - '{{ docker_folder_path }}/auditbeat/config'
+        - '{{ docker_folder_path }}/auditbeat/data'
+        - '{{ docker_folder_path }}/auditbeat/logs'
+
+    dns:
+      version: "v5.2.1" # Originally based on v5.0
+      timezone: "America/Chicago"
+      ip: 172.16.10.25
+      # Cloudflare DNS Servers
+      # 1.1.1.1 - no filtering
+      # 1.1.1.2 - no malware
+      # 1.1.1.3 - no malware, no adult content
+      upstream_server_primary: "1.1.1.3"
+      upstream_server_secondary: "1.1.1.1"
+      dns_portal_password: "{{ lookup('password', 'support_material/credentials/password_dns_pihole.txt length=16 chars=ascii_letters,digits') }}"
+      directories: 
+        - '{{ docker_folder_path }}/dns'
+        - '{{ docker_folder_path }}/dns/config'
+        - '{{ docker_folder_path }}/dns/etc'
+        - '{{ docker_folder_path }}/dns/dnsmasq'
+
+    git:
+      version: "latest"
+      ip: 172.16.10.26
+      secret_key: "{{ lookup('password', 'support_material/credentials/password_git_secret_key.txt length=16 chars=ascii_letters,digits') }}"
+      data_dir: "{{ docker_folder_path }}/git/data/"
+      directories:
+        - '{{ docker_folder_path }}/git'
+        - '{{ docker_folder_path }}/git/config'
+        - '{{ docker_folder_path }}/git/data'
+        - '{{ docker_folder_path }}/git/logs'
+        - '{{ docker_folder_path }}/git/backups'
+
+    webmail:
+      version: "1.4.9-apache"
+      ip: 172.16.10.27
+      database_name: "roundcube"
+      des_key: "{{ lookup('password', 'support_material/credentials/password_webmail_des_key.txt length=24 chars=ascii_letters,digits') }}"
+      directories:
+        - '{{ docker_folder_path }}/webmail'
+        - '{{ docker_folder_path }}/webmail/config'
+        - '{{ docker_folder_path }}/webmail/files'
+        - '{{ docker_folder_path }}/webmail/logs'
+
+    upgrade: 
+      version: "latest"
+
+    fail2ban:
+      version: "latest"
+      directories:
+        - '{{ docker_folder_path }}/fail2ban'
+        - '{{ docker_folder_path }}/fail2ban/data'
+        - '{{ docker_folder_path }}/fail2ban/logs'
+
+    
+  roles:
+  - initial
+  - docker 
+  - nginx 
+  - letsencrypt
+  - openldap
+  - mail 
+  - postgres
+  - drive
+  - chat-server 
+  - chat-web 
+  - vault
+  - dns
+  - web
+  - webmail
+  - vpn
+  - auditbeat
+  - git
+  - upgrade
+  - role: backup
+    tags: [ "never", "backup" ]
+  - fail2ban
+...

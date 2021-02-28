@@ -1,0 +1,84 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ nginx['directories'] }}"
+
+- name: Create Additional Directories For Subdomains
+  file:
+    path: "{{ nginx['html_dir_path'] }}/{{ item }}"
+    state: directory
+  loop: "{{ letsencrypt['certificate_subject_alt_name'] }}"
+
+- name: Copy Nginx conf File 
+  template:
+    src: nginx.conf.j2
+    dest: "{{ nginx['conf_path'] }}"
+    group: '0'
+
+- name: Copy the snakeoil.csr to Generate Temporary Certificates
+  copy:
+    src: snakeoil.csr
+    dest: "{{ docker_folder_path }}/etc/ssl/csr"
+
+- name: Copy the snakeoil.key to Generate Temporary Certificates
+  copy:
+    src: snakeoil.key
+    dest: "{{ docker_folder_path }}/etc/ssl/private/"
+
+- name: Generate a Self Signed OpenSSL Certificate
+  openssl_certificate:
+    path: "{{ docker_folder_path }}/etc/ssl/crt/snakeoil.crt"
+    privatekey_path: "{{ docker_folder_path }}/etc/ssl/private/snakeoil.key"
+    csr_path: "{{ docker_folder_path }}/etc/ssl/csr/snakeoil.csr"
+    provider: selfsigned
+
+- name: Copy Nginx Index File 
+  template:
+    src: index.html.j2
+    dest: "{{ nginx['html_dir_path'] }}/index.html"
+
+- name: Setup Nginx Container
+  docker_container:
+    name: nginx
+    image: nginx:{{ nginx['version'] }}
+    restart_policy: unless-stopped   
+    volumes:
+      - "{{ docker_folder_path }}/nginx/html/:/usr/share/nginx/html:ro"
+      - "{{ docker_folder_path }}/nginx/log/:/var/log/nginx/:rw"
+      - "{{ docker_folder_path }}/nginx/conf.d/:/etc/nginx/conf.d/:ro"
+      - "{{ docker_folder_path }}/nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "{{ docker_folder_path }}/etc/ssl/crt/snakeoil.crt:/etc/ssl/crt/snakeoil.crt:ro"
+      - "{{ docker_folder_path }}/etc/ssl/private/snakeoil.key:/etc/ssl/private/snakeoil.key:ro"
+      - "{{ docker_folder_path }}/letsencrypt/keys:/etc/ssl/letsencrypt/private/:ro"
+      - "{{ docker_folder_path }}/letsencrypt/certs:/etc/ssl/letsencrypt/crt/:ro"
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ nginx['ip'] }}"
+    published_ports:
+    - 80:80
+    - 443:443
+    purge_networks: yes
+    networks_cli_compatible: yes    
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"  
+
+- name: Enable Nginx Port
+  firewalld:
+    port: 80/tcp
+    permanent: yes
+    state: enabled
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Enable Nginx Port
+  firewalld:
+    port: 443/tcp
+    permanent: yes
+    state: enabled
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Restart Firewall Service
+  service:
+    name: firewalld
+    state: restarted
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'

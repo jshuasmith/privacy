@@ -1,0 +1,30 @@
+---
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ dns['directories'] }}"
+
+- name: Start PiHole DNS Container
+  docker_container:
+    name: dns
+    image: "pihole/pihole:{{ dns['version'] }}"
+    state: started
+    hostname: dns
+    user: root
+    restart: yes   
+    restart_policy: unless-stopped   
+    volumes:
+      - '{{ docker_folder_path }}/dns/etc:/etc/pihole/'
+      - '{{ docker_folder_path }}/dns/dnsmasq:/etc/dnsmasq.d/'
+    env:
+      TZ: "{{ dns['timezone'] }}"
+      WEBPASSWORD: "{{ dns['dns_portal_password'] }}"
+      DNS1: "{{ dns['upstream_server_primary'] }}"
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ dns['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes        
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"

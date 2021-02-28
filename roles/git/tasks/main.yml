@@ -1,0 +1,53 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ git['directories'] }}"
+
+- name: Copy Nginx Files For Git Subdomain
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ nginx['confd_dir_path'] }}/{{ domain['git'] }}.conf"
+  
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes
+
+- name: Gitea Docker Container
+  docker_container:
+    name: git
+    image: gitea/gitea:{{ git['version'] }}
+    state: started
+    hostname: git
+    env:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      APP_NAME: "Git"
+      RUN_MODE: "prod"
+      DOMAIN: "{{ domain['git'] }}"
+      DISABLE_SSH: "true"
+      HTTP_PORT: "3000"
+      #ROOT_URL: "{{ domain['git'] }}"
+      DB_TYPE: sqlite3
+      INSTALL_LOCK: "true"
+      SECRET_KEY: "{{ git['secret_key'] }}"
+      DISABLE_REGISTRATION: "true"
+      REQUIRE_SIGNIN_VIEW: "true"
+      ENABLE_OPENID_SIGNIN: "false"
+      ENABLE_OPENID_SIGNUP: "false"
+    volumes:
+      - '{{ docker_folder_path }}/git/data:/data:rw'
+    restart: yes
+    restart_policy: unless-stopped   
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ git['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes 
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+  
+- name: Add LDAP Authentication To Git
+  command: docker exec --user git -t git gitea admin auth add-ldap --name ldap --security-protocol unencrypted --host "{{ openldap['ip'] }}" --port 389 --user-search-base "{{ openldap['user_search_base'] }}" --user-filter "(&(objectClass=posixAccount)(uid=%s))" --email-attribute mail --bind-dn "{{ ldap_auth['bind_dn'] }}" --bind-password "{{ ldap_auth['bind_pw'] }}" --synchronize-users --username-attribute "uid" --firstname-attribute "givenName" --surname-attribute "sn" --admin-filter "(objectClass=posixAccount)"

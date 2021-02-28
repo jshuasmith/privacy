@@ -1,0 +1,142 @@
+---
+- name: Create Mail Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ mailserver['directories'] }}"
+
+- name: Start docker-mailserver Container
+  docker_container:
+    name: mailserver
+    image: "tvial/docker-mailserver:{{ mailserver['version'] }}"
+    state: started
+    hostname: mail
+    domainname: "{{ top_level_domain }}"
+    restart: yes
+    restart_policy: unless-stopped   
+    volumes:
+      - "{{ docker_folder_path }}/mail/maildata:/var/mail"
+      - "{{ docker_folder_path }}/mail/mailstate:/var/mail-state"
+      - "{{ docker_folder_path }}/mail/maillogs:/var/log/mail"
+      - "{{ docker_folder_path }}/mail/config/:/tmp/docker-mailserver/"
+      - "{{ docker_folder_path }}/etc/letsencrypt/:/etc/letsencrypt"
+      - "{{ docker_folder_path }}/letsencrypt/certs/{{ letsencrypt['certificate_common_name'] }}.pem:/tmp/ssl/cert/{{ letsencrypt['certificate_common_name'] }}.pem:ro"
+      - "{{ docker_folder_path }}/letsencrypt/keys/{{ top_level_domain }}.key:/tmp/ssl/private/{{ top_level_domain }}.key:ro"
+    env:
+      ENABLE_SPAMASSASSIN: "1"
+      SA_SPAM_SUBJECT: "[SPAM]"
+      ENABLE_CLAMAV: "1"
+      ONE_DIR: "1"
+      DMS_DEBUG: "0"
+      SSL_TYPE: manual
+      SSL_CERT_PATH: "/tmp/ssl/cert/{{ top_level_domain }}.pem"
+      SSL_KEY_PATH: "/tmp/ssl/private/{{ top_level_domain }}.key"
+      SPOOF_PROTECTION: "1"
+      POSTFIX_MESSAGE_SIZE_LIMIT: "20480000"
+      ENABLE_POSTGREY: "{{ mailserver['postgrey'] }}"
+      ENABLE_FAIL2BAN: "1"
+      POSTGREY_DELAY: "30"
+      POSTGREY_AUTO_WHITELIST_CLIENTS: "1"
+      ENABLE_LDAP: "1"
+      LDAP_SERVER_HOST: "{{ openldap['ip'] }}"
+      LDAP_SEARCH_BASE: "ou=users,dc={{ldap['name'] }},dc={{ ldap['tld'] }}"
+      LDAP_BIND_DN: "cn=admin,dc={{ldap['name'] }},dc={{ ldap['tld'] }}"
+      LDAP_BIND_PW: "{{ openldap['admin_password'] }}"
+      LDAP_QUERY_FILTER_USER: "(&(mail=%s)(mailEnabled=TRUE))"
+      LDAP_QUERY_FILTER_GROUP: "(&(mailGroupMember=%s)(mailEnabled=TRUE))"
+      LDAP_QUERY_FILTER_ALIAS: "(|(&(mailAlias=%s)(objectClass=PostfixBookMailForward))(&(mailAlias=%s)(objectClass=PostfixBookMailAccount)(mailEnabled=TRUE)))"
+      LDAP_QUERY_FILTER_DOMAIN: "(|(&(mail=*@%s)(objectClass=PostfixBookMailAccount)(mailEnabled=TRUE))(&(mailGroupMember=*@%s)(objectClass=PostfixBookMailAccount)(mailEnabled=TRUE))(&(mailalias=*@%s)(objectClass=PostfixBookMailForward)))"
+      DOVECOT_PASS_FILTER: (&(objectClass=PostfixBookMailAccount)(uniqueIdentifier=%n))
+      DOVECOT_USER_FILTER: (&(objectClass=PostfixBookMailAccount)(uniqueIdentifier=%n))
+      ENABLE_SASLAUTHD: "1"
+      SASLAUTHD_MECHANISMS: ldap
+      SASLAUTHD_LDAP_SERVER: "{{ openldap['ip'] }}"
+      SASLAUTHD_LDAP_BIND_DN: "cn=admin,dc={{ldap['name'] }},dc={{ ldap['tld'] }}"
+      SASLAUTHD_LDAP_PASSWORD: "{{ openldap['admin_password'] }}"
+      SASLAUTHD_LDAP_SEARCH_BASE: "ou=users,dc={{ldap['name'] }},dc={{ ldap['tld'] }}"
+      POSTMASTER_ADDRESS: "postmaster@{{ top_level_domain }}"
+    ports:
+      - "25:25/tcp"
+      - "143:143/tcp"
+      - "587:587/tcp"
+      - "993:993/tcp"
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ mailserver['ip'] }}"
+    purge_networks: yes
+    capabilities:
+     - NET_ADMIN
+    networks_cli_compatible: yes        
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+- name: Enable SMTP Port
+  firewalld:
+    port: 25/tcp
+    permanent: true
+    state: enabled
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Enable IMAP Port
+  firewalld:
+    port: 143/tcp
+    permanent: true
+    state: enabled
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Enable SMTP MSA Port
+  firewalld:
+    port: 587/tcp
+    permanent: true
+    state: enabled
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Enable IMAPS Port
+  firewalld:
+    port: 993/tcp
+    permanent: true
+    state: enabled
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Restart firewalld Service
+  service:
+    name: firewalld
+    state: restarted
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Copy setup.sh File
+  copy:
+    src: setup.sh
+    dest: "{{ mailserver['config_dir_path'] }}"
+    owner: root
+    group: root
+    mode: '0755'
+    backup: yes  
+
+- name: Create postfix-aliases.cf File
+  file:
+    path: "{{ mailserver['config_dir_path'] }}/postfix-aliases.cf"
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create postfix-accounts.cf File
+  file:
+    path: "{{ mailserver['config_dir_path'] }}/postfix-accounts.cf"
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'   
+
+# Dovecot fails to load without at least one account
+- name: Create Mail Account 
+  command: "{{ mailserver['config_dir_path'] }}/setup.sh email add postmaster@{{ top_level_domain }} {{ mailserver['postmaster_password'] }}" 
+  ignore_errors: yes
+
+- name: Create DKIM Keys 
+  command: "{{ mailserver['config_dir_path'] }}/setup.sh config dkim"
+  ignore_errors: yes
+
+- name: Restart mailserver Container
+  command: "docker restart mailserver" 

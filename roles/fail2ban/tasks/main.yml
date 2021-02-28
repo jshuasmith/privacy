@@ -1,0 +1,29 @@
+---
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ fail2ban['directories'] }}"
+
+- name: Start fail2ban Container
+  docker_container:
+    name: fail2ban
+    image: "crazymax/fail2ban:{{ fail2ban['version'] }}"
+    state: started
+    hostname: fail2ban
+    user: root
+    restart: yes   
+    restart_policy: unless-stopped 
+    env:
+      TZ: "America/Chicago"
+      F2B_DB_PURGE_AGE: "1d"
+      F2B_IPTABLES_CHAIN: "DOCKER-USER"
+    volumes:
+      - "{{ docker_folder_path }}/fail2ban/data/:/usr/share/auditbeat/auditbeat.yml:rw"
+      - "{{ docker_folder_path }}/var/log/:/var/log/:ro"
+    network_mode: host
+    capabilities:
+      - NET_ADMIN
+      - NET_RAW
+      
+  

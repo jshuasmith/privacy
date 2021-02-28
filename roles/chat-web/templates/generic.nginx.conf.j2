@@ -1,0 +1,48 @@
+server {
+    listen 80;
+    server_name {{ domain['chat'] }};
+
+    location /.well-known/acme-challenge/ {
+        alias /usr/share/nginx/html/.well-known/acme-challenge/;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://www.$host$request_uri;
+    }
+}
+
+server {
+	listen 443 ssl http2;
+	listen [::]:443 ssl http2;
+    root /usr/share/nginx/html/{{ domain['chat'] }};
+    index index.html;
+    server_name {{ domain['chat'] }};
+
+    access_log   /var/log/nginx/{{ domain['chat'] }}.access.log;
+    error_log   /var/log/nginx/{{ domain['chat'] }}.error.log;
+
+    ssl_certificate /etc/ssl/letsencrypt/crt/{{ top_level_domain }}.pem;
+    ssl_certificate_key /etc/ssl/letsencrypt/private/{{ top_level_domain }}.key;
+    
+    location / {
+       proxy_pass http://{{ chat_web['ip'] }}:80;
+    }
+
+    location = /favicon.ico {
+        log_not_found off;
+        access_log off;
+    }
+
+    location = /robots.txt {
+        allow all;
+        log_not_found off;
+        access_log off;
+    }
+
+    location /.well-known/acme-challenge/ {
+        root /usr/share/nginx/html/.well-known/acme-challenge/;
+        try_files $uri =404;
+    }
+
+}

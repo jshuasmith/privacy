@@ -1,0 +1,79 @@
+- name: Backup Drive Files
+  synchronize:
+    src: "{{ nextcloud['backup_dir'] }}"
+    dest: support_material/backup/drive
+    mode: pull
+    recursive: yes
+    partial: yes
+    archive: yes
+
+- name: Backup Letsencrypt Files
+  synchronize:
+    src: "{{ letsencrypt['dir'] }}"
+    dest: support_material/backup/certificates
+    mode: pull
+    recursive: yes
+    partial: yes
+
+- name: Backup Mail Files
+  synchronize:
+    src: "{{ mailserver['backup_dir'] }}"
+    dest: support_material/backup/mail
+    mode: pull
+    recursive: yes
+    partial: yes
+    archive: yes
+
+- name: Backup VPN Files (Client Configs)
+  synchronize:
+    src: "{{ vpn['client_configs'] }}"
+    dest: support_material/backup/vpn
+    mode: pull
+    recursive: yes
+    partial: yes
+    archive: yes
+
+- name: Backup VPN Files (Server Configs)
+  synchronize:
+    src: "{{ vpn['config_dir'] }}"
+    dest: support_material/backup/vpn
+    mode: pull
+    recursive: yes
+    partial: yes    
+    archive: yes
+
+- name: Backup Password Files
+  synchronize:
+    src: "{{ vault['backup_dir'] }}"
+    dest: support_material/backup/vault 
+    mode: pull
+    recursive: yes
+    partial: yes    
+    archive: yes
+
+- name: Backup Postgres Files
+  synchronize:
+    src: "{{ postgres['data_dir'] }}"
+    dest: support_material/backup/postgres
+    mode: pull
+    recursive: yes
+    partial: yes    
+    archive: yes
+
+- name: Backup OpenLDAP Files
+  synchronize:
+    src: "{{ openldap['data_dir'] }}"
+    dest: support_material/backup/openldap
+    mode: pull
+    recursive: yes
+    partial: yes    
+    archive: yes
+
+- name: Backup Git Files
+  synchronize:
+    src: "{{ git['data_dir'] }}"
+    dest: support_material/backup/git
+    mode: pull
+    recursive: yes
+    partial: yes    
+    archive: yes

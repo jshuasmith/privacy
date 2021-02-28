@@ -1,0 +1,143 @@
+- name: Install Base Packages
+  yum:
+    name: ['gcc', 'platform-python-devel', 'openldap-devel']
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Install Base Packages
+  package:
+    name: ['build-essential', 'python3-dev', 'libldap2-dev', 'libsasl2-dev', 'ldap-utils']
+    state: present
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+
+- name: Install Aptitude Using Apt
+  apt: 
+    name: aptitude 
+    state: latest
+    update_cache: yes 
+    force_apt_get: yes
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+
+- name: Install Python Module(s)
+  pip:
+    name: 
+      - python-ldap
+
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ openldap['directories'] }}"
+
+- name: Copy Postfix LDIF File 
+  copy:
+    src: postfix-book.ldif
+    dest: "{{ openldap['ldif_postfix_file_dest'] }}"
+    
+- name: Setup OpenLDAP Container
+  docker_container:
+    name: openldap
+    image: osixia/openldap:{{ openldap['version'] }}
+    hostname: ldap.{{ top_level_domain }}
+    restart_policy: unless-stopped   
+    volumes:
+    - "{{ docker_folder_path }}/openldap/data/:/data/ldif:rw"
+    env:
+      LDAP_ORGANISATION: "{{ openldap['organisation'] }}"
+      LDAP_DOMAIN: "{{ top_level_domain }}"
+      LDAP_ADMIN_PASSWORD: "{{ openldap['admin_password'] }}"
+      LDAP_CONFIG_PASSWORD: "{{ openldap['config_password'] }}"
+      LDAP_READONLY_USER: "true"
+      LDAP_READONLY_USER_USERNAME: "{{ openldap['read_only_user'] }}"
+      LDAP_READONLY_USER_PASSWORD: "{{ openldap['read_only_password'] }}"
+      DOVECOT_PASS_FILTER: (&(objectClass=PostfixBookMailAccount)(uniqueIdentifier=%n))
+      DOVECOT_USER_FILTER: (&(objectClass=PostfixBookMailAccount)(uniqueIdentifier=%n))
+      ENABLE_SASLAUTHD: "1"
+      SASLAUTHD_MECHANISMS: ldap
+      SASLAUTHD_LDAP_SERVER: "{{ openldap['ip'] }}"
+      SASLAUTHD_LDAP_BIND_DN: "cn=admin,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}"
+      SASLAUTHD_LDAP_PASSWORD: "{{ openldap['admin_password'] }}"
+      SASLAUTHD_LDAP_SEARCH_BASE: "ou=users,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}"
+    networks:
+    - name: "{{ docker_network['name'] }}"
+      ipv4_address: "{{ openldap['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+- name: Wait for OpenLDAP Server To Be Available
+  wait_for:
+    host: "{{ openldap['ip'] }}"
+    port: 389
+    delay: 10
+
+- name: Add Parent Entry for Users
+  ldap_entry:
+    dn: "{{ openldap['user_search_base'] }}"
+    objectClass: "organizationalUnit"
+  args: "{{ ldap_auth }}"
+
+- name: Add Postfix Schema to OpenLDAP
+  command: docker exec -dt openldap ldapadd -Y EXTERNAL -H ldapi:/// -f /data/ldif/postfix-book.ldif
+
+- name: Restart OpenLDAP Container
+  command: "docker restart openldap" 
+  
+- name: Add LDAP Users
+  ldap_entry:
+    dn: "uid={{ item.key }},ou=users,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}"
+    state: present
+    objectClass:
+      - posixAccount
+      - organizationalPerson
+      - person
+      - top
+      - inetOrgPerson
+      - PostfixBookMailAccount
+      - mailUser
+      - extensibleObject
+    attributes:
+      cn: "{{ item.value.first_name }} {{ item.value.last_name }}"
+      givenName: "{{ item.value.first_name }}"
+      sn: "{{ item.value.last_name }}"
+      uid: "{{ item.key }}"
+      uidNumber: "{{ item.value.id }}"
+      gidNumber: "{{ item.value.id }}"
+      homeDirectory: "/home/{{ item.key }}"
+      loginShell: none
+      displayName: "{{ item.value.first_name }} {{ item.value.last_name }}"
+      mail: "{{ item.key }}@{{ top_level_domain }}"
+      mailAlias: "{{ item.value.mail_alias }}"
+      maildrop: "{{ item.key }}"
+      mailEnabled: "TRUE"
+      mailGidNumber: "5000"
+      mailHomeDirectory: "/var/mail/{{ top_level_domain }}/{{ item.key }}/"
+      mailQuota: 0
+      mailStorageDirectory: "maildir:/var/mail/{{ top_level_domain }}/{{ item.key }}/"
+      mailUidNumber: "5000"
+      uniqueIdentifier: "{{ item.key }}"
+  args: "{{ ldap_auth }}"
+  loop: "{{ lookup('dict', users, wantlist=True) }}"
+  tags: [ "account_create" ]
+
+- name: Set a Password for Added Users
+  ldap_passwd:
+    dn: "uid={{ item.key }},ou=users,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}"
+    passwd: "{{ item.value.password }}"
+  args: "{{ ldap_auth }}"
+  loop: "{{ lookup('dict', users, wantlist=True) }}"
+  tags: [ "account_create" ]
+
+- name: Change Password For Specific User
+  ldap_passwd:
+    dn: "uid={{ password_change_user }},ou=users,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}"
+    passwd: "{{ password_change_password }}"
+  args: "{{ ldap_auth }}"
+  tags: ['never', 'password_change']
+
+- name: Change Password For Specific User
+  ldap_passwd:
+    dn: "uid={{ account_disable }},ou=users,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}"
+    passwd: "{{ lookup('password', '/tmp/reset length=80 chars=ascii_letters,digits,hexdigits,punctuation') }}"
+  args: "{{ ldap_auth }}"
+  tags: ['never', 'account_disable']

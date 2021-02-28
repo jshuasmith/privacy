@@ -1,0 +1,45 @@
+---
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ chat_web['directories'] }}"
+
+- name: Copy config.json File
+  template:
+    src: config.json.j2
+    dest: '{{ docker_folder_path }}/chat-web/config/config.json'
+    owner: root
+    group: root
+    mode: '0755'
+    backup: yes
+
+- name: Start Riot.im Chat Container
+  docker_container:
+    name: chat-web
+    image: "vectorim/element-web:{{ chat_web['version'] }}"
+    state: started
+    hostname: chat-web
+    domainname: "{{ top_level_domain }}"
+    restart: yes   
+    restart_policy: unless-stopped   
+    volumes:
+      - "{{ docker_folder_path }}/chat-web/config/config.json:/app/config.json:ro"
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ chat_web['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes    
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"    
+  
+- name: Copy Nginx Files For Chat Subdomain
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ nginx['confd_dir_path'] }}/{{ domain['chat'] }}.conf"
+
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes

@@ -1,0 +1,131 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ letsencrypt['directories'] }}"
+
+- name: Copy Letsencrypt Renewal Ansible Script to Host
+  template:
+    src: renewal_letsencrypt.yaml.j2
+    dest: "{{ docker_folder_path }}/letsencrypt/files/renewal_letsencrypt.yaml"
+
+- name: Copy Letsencrypt Renewal Python Script to Host
+  copy:
+    src: acme_tiny.py
+    dest: "{{ docker_folder_path }}/letsencrypt/files/acme_tiny.py"
+    mode: '0755'
+
+- name: Copy Letsencrypt Renewal Bash Script to Host
+  template:
+    src: letsencrypt_renew.sh.j2
+    dest: "{{ docker_folder_path }}/letsencrypt/files/letsencrypt_renew.sh"
+    mode: '0755'
+
+- name: Create a Cron Job To Update LetsEncrypt Certificates Weekly
+  cron:
+    name: letsencrypt_update
+    weekday: "1"
+    minute: "15"
+    hour: "7"
+    user: root
+    job: "{{ docker_folder_path }}/letsencrypt/files/letsencrypt_renew.sh >> /var/log/renew_cert.log 2>&1"
+
+- name: Generate a LetsEncrypt RSA Account Key
+  openssl_privatekey:
+    path: "{{ letsencrypt['account_key'] }}"
+    size: 4096
+
+- name: Generate a LetsEncrypt RSA Private Key
+  openssl_privatekey:
+    path: "{{ docker_folder_path }}/letsencrypt/keys/{{ top_level_domain }}.key"
+    size: 4096
+
+- name: CSR Request Info
+  debug:
+    msg: "DNS:{{ letsencrypt['certificate_subject_alt_name'] | join(',DNS:') }}"
+
+- name: Generate Certificate Signing Request (CSR) for LetsEncrypt 
+  openssl_csr:
+    path: "{{ letsencrypt['csrs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.csr"
+    privatekey_path: "{{ letsencrypt['keys_dir'] }}/{{ top_level_domain }}.key"
+    common_name: "{{ letsencrypt['certificate_common_name'] }}"
+    subject_alt_name: "DNS:{{ letsencrypt['certificate_subject_alt_name'] | join(',DNS:') }}"
+
+- name: "Preparing Challenges for Domains {{ ', '.join(letsencrypt['certificate_subject_alt_name']) }}"
+  acme_certificate:
+    account_key_src: "{{ letsencrypt['account_key'] }}"
+    csr: "{{ letsencrypt['csrs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.csr"
+    dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.pem"
+    chain_dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}-intermediate.crt"
+    fullchain_dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}-fullchain.crt"
+    account_email: "{{ letsencrypt['acme_email'] }}"
+    terms_agreed: "{{ letsencrypt['acme_terms_agreed'] }}"
+    challenge: "{{ letsencrypt['acme_challenge_type'] }}"
+    acme_directory: "{{ letsencrypt['acme_directory'] }}"
+    acme_version: "{{ letsencrypt['acme_version'] }}"
+    force: yes
+  register: challenge_http
+
+- name: Copy Challenge Files to /.well-known/acme-challenge/  
+  copy:
+    dest: "{{ nginx['html_dir_path'] }}/{{ item.value['http-01']['resource'] }}"
+    content: "{{ item.value['http-01']['resource_value'] }}"
+  with_dict: "{{ challenge_http.challenge_data }}"
+  when: challenge_http is changed
+
+- name: Copy Updated Nginx conf File 
+  template:
+    src: nginx.conf.j2
+    dest: "{{ nginx['conf_path'] }}"
+    group: '0'
+
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes
+
+- name: "Complete Letsencrypt Challenges"
+  acme_certificate:
+    acme_directory: "{{ letsencrypt['acme_directory'] }}"
+    acme_version: "{{ letsencrypt['acme_version'] }}"
+    account_key: "{{ letsencrypt['account_key'] }}"
+    account_email: "{{ letsencrypt['acme_email'] }}"
+    challenge: "{{ letsencrypt['acme_challenge_type'] }}"
+    csr: "{{ letsencrypt['csrs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.csr"
+    dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.pem"
+    chain_dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}-intermediate.crt"
+    fullchain_dest: "{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}-fullchain.crt"
+    data: "{{ challenge_http }}"
+
+- name: Update nginx.conf to Proper Certificate Path 
+  lineinfile:
+    path: "{{ nginx['conf_path'] }}"
+    regexp: '^(\s+)ssl_certificate\s+.*'
+    line: '\g<1>ssl_certificate /etc/ssl/letsencrypt/crt/{{ letsencrypt.certificate_common_name }}.pem;'
+    backrefs: true
+
+- name: Update nginx.conf to Proper Certificate Key Path 
+  lineinfile:
+    path: "{{ nginx['conf_path'] }}"
+    regexp: '^(\s+)ssl_certificate_key\s+.*'
+    line: '\g<1>ssl_certificate_key /etc/ssl/letsencrypt/private/{{ top_level_domain }}.key;'
+    backrefs: true
+
+- name: Copy Nginx Files For New Subdomains
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ nginx['confd_dir_path'] }}/{{ item }}.conf"
+  loop: "{{ letsencrypt['certificate_subject_alt_name'] }}"
+
+- name: Copy Nginx Index File For Each New Subdomain
+  template:
+    src: index.html.j2
+    dest: "{{ nginx['html_dir_path'] }}/{{ item }}/index.html"
+  loop: "{{ letsencrypt['certificate_subject_alt_name'] }}"
+
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes

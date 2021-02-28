@@ -1,0 +1,28 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ postgres['directories'] }}"
+
+- name: Install Postgres Python module
+  pip:
+    name: 
+      - psycopg2-binary 
+
+- name: Setup Postgres Container
+  docker_container:
+    name: postgres
+    image: postgres:{{ postgres['version'] }}
+    restart_policy: unless-stopped   
+    volumes:
+    - "{{ docker_folder_path }}/postgres/data/:/var/lib/postgresql/data:rw"
+    env:
+      POSTGRES_PASSWORD={{ postgres['password'] }}
+      POSTGRES_USER={{ postgres['user'] }}
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ postgres['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes    
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"    

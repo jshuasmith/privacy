@@ -1,0 +1,66 @@
+server_name: "{{ domain['x'] }}"
+pid_file: /data/homeserver.pid
+federation_ip_range_blacklist:
+  - '127.0.0.0/8'
+  - '10.0.0.0/8'
+  - '172.16.0.0/12'
+  - '192.168.0.0/16'
+  - '100.64.0.0/10'
+  - '169.254.0.0/16'
+  - '::1/128'
+  - 'fe80::/64'
+  - 'fc00::/7'
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    resources:
+      - names: [client, federation]
+        compress: false
+retention:
+acme:
+    enabled: false
+    port: 80
+    bind_addresses: ['::', '0.0.0.0']
+    reprovision_threshold: 30
+    domain: matrix.example.com
+    account_key_file: /data/acme_account.key
+database:
+  name: "sqlite3"
+  args:
+    database: "/data/homeserver.db"
+log_config: "/data/{{ domain['x'] }}.log.config"
+media_store_path: "/data/media_store"
+account_validity:
+registration_shared_secret: "{{ chat_server['registration_shared_secret'] }}"
+account_threepid_delegates:
+metrics_flags:
+report_stats: true
+macaroon_secret_key: "{{ chat_server['macaroon_secret_key'] }}"
+form_secret: "{{ chat_server['form_secret'] }}"
+signing_key_path: "/data/{{ domain['x'] }}.signing.key"
+old_signing_keys:
+trusted_key_servers:
+  - server_name: "matrix.org"
+saml2_config:
+  user_mapping_provider:
+    config:
+sso:
+password_config:
+email:
+opentracing:
+password_providers:
+ - module: "ldap_auth_provider.LdapAuthProvider"
+   config:
+     enabled: true
+     uri: "ldap://{{ openldap['ip'] }}:389"
+     start_tls: false
+     base: "ou=users,dc={{ldap['name'] }},dc={{ ldap['tld'] }}"
+     attributes:
+        uid: "uid"
+        mail: "mail"
+        name: "cn"
+     bind_dn: "cn=admin,dc={{ldap['name'] }},dc={{ ldap['tld'] }}"
+     bind_password: "{{ openldap['admin_password'] }}"
+     filter: "(objectClass=posixAccount)"

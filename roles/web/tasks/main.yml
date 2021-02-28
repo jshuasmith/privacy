@@ -1,0 +1,27 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ web['directories'] }}"
+
+- name: Copy Nginx Files For Web Subdomain
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ docker_folder_path }}/nginx/conf/nginx.conf"
+    
+- name: Copy Web Files to Server
+  copy:
+    src: files/web_site/
+    dest: "{{ docker_folder_path }}/nginx/html/{{ domain['web'] }}"
+
+- name: Copy Updated index.html To Web Folder 
+  template:
+    src: index.html.j2 
+    dest: "{{ docker_folder_path }}/nginx/html/{{ domain['web'] }}/index.html"
+
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes
+  

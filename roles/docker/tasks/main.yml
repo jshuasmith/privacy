@@ -1,0 +1,98 @@
+- name: Install Packages
+  package:
+    name: 
+      - "python3-pip"
+      - "https://download.docker.com/linux/centos/7/x86_64/stable/Packages/containerd.io-1.2.13-3.2.el7.x86_64.rpm"
+    state: latest
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+      
+- name: Install Aptitude 
+  apt: 
+    name: aptitude 
+    state: latest
+    update_cache: yes 
+    force_apt_get: yes
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+
+- name: Install Required System Packages
+  apt: 
+    name: "{{ item }}"
+    state: latest 
+    update_cache: yes
+  loop: [ 'apt-transport-https', 'ca-certificates', 'curl', 'software-properties-common', 'python3-pip', 'virtualenv', 'python3-setuptools']
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+
+- name: Install Docker Python Module(s)
+  pip:
+    name: 
+      - docker
+      - pyOpenSSL 
+
+- name: Add Docker GPG apt Key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+
+- name: Add Docker Repository
+  apt_repository:
+    repo: deb https://download.docker.com/linux/ubuntu focal stable
+    state: present
+  when: ansible_distribution == 'Ubuntu' and ansible_distribution_release == "focal"
+ 
+- name: Update Apt And Install Docker-CE
+  apt: 
+    update_cache: yes 
+    name: docker-ce 
+    state: latest
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+    
+- name: Add Docker Repo
+  command: yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+  args:
+    creates: /etc/yum.repos.d/docker-ce.repo
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+    
+- name: Install Docker-CE
+  package:
+    name: docker-ce
+    state: present
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Add Docker Folder for Central Local Filesystem Access Between Containers
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ docker['directories'] }}"
+
+- name: Start & Enable Docker Service
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Create Docker Network
+  docker_network:
+    name: "{{ docker_network['name'] }}"
+    ipam_config:
+        - subnet: "{{ docker_network['subnet'] }}"
+          gateway: "{{ docker_network['gateway'] }}"
+    driver_options:
+      com.docker.network.bridge.name: "{{ docker_network['name'] }}"
+
+- name: Add Docker Detwork to Trusted Zone
+  firewalld:
+    source: "{{ docker_network['subnet'] }}"
+    zone: trusted
+    permanent: yes
+    immediate: yes
+    state: enabled
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Create a Cron Job To Prune Docker
+  cron:
+    name: docker_prune
+    minute: "15"
+    hour: "3"
+    user: root
+    job: "docker system prune -a -f"

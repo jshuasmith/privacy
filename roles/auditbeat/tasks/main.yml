@@ -1,0 +1,32 @@
+---
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ auditbeat['directories'] }}"
+
+- name: Copy Auditbeat Config File
+  template:
+    src: "auditbeat.yml.j2"
+    dest: "{{ docker_folder_path }}/auditbeat/config/auditbeat.yml"
+
+- name: Start Auditbeat Container
+  docker_container:
+    name: auditbeat
+    image: "docker.elastic.co/beats/auditbeat:{{ auditbeat['version'] }}"
+    state: started
+    hostname: auditbeat
+    user: root
+    restart: yes   
+    restart_policy: unless-stopped   
+    volumes:
+      - "{{ docker_folder_path }}/auditbeat/config/auditbeat.yml:/usr/share/auditbeat/auditbeat.yml:ro"
+      - "{{ docker_folder_path }}/auditbeat/logs/:/var/log/auditbeat:rw"
+    network_mode: host 
+    capabilities:
+      - AUDIT_CONTROL
+    pid_mode: host
+    env:
+      strict.perms: "false"
+      
+  

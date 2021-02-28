@@ -1,0 +1,30 @@
+#!/usr/bin/bash
+ 
+echo ""
+echo "----------------------------------------"
+echo "[*] Certificate Renewal Process Starting"
+date
+echo "----------------------------------------"
+FILE_CERT_TMP="{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.pem.tmp"
+FILE_CERT="{{ letsencrypt['certs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.pem"
+
+python3 {{ docker_folder_path }}/letsencrypt/files/acme_tiny.py --account-key {{ letsencrypt['account_key'] }} --csr {{ letsencrypt['csrs_dir'] }}/{{ letsencrypt['certificate_common_name'] }}.csr --acme-dir {{ nginx['html_dir_path'] }}/.well-known/acme-challenge/ > ${FILE_CERT_TMP}
+
+if [ -f ${FILE_CERT_TMP} ]
+then
+    if [ -s ${FILE_CERT_TMP} ]
+    then
+        echo "[*] Temp cert file exists and not empty, copying to existing file."
+        cp -f ${FILE_CERT_TMP} ${FILE_CERT}
+        docker restart nginx
+    else
+      echo "[*] Temp cert file exists but is empty, not copying."
+    fi
+else
+    echo "[*] Temp cert file does not exist, not copying."
+fi
+echo "----------------------------------------"
+echo "[*] Certificate Renewal Process Complete"
+date
+echo "----------------------------------------"
+echo ""

@@ -1,0 +1,11 @@
+- name: Setup Watchtower Upgrade Container
+  docker_container:
+    name: upgrade
+    image: v2tec/watchtower:{{ upgrade['version'] }}
+    hostname: upgrade.{{ top_level_domain }}
+    restart_policy: unless-stopped   
+    volumes:
+    - "/var/run/docker.sock:/var/run/docker.sock"
+    command: "-i 3600 --label-enable"
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"

@@ -1,0 +1,44 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ vault['directories'] }}"
+
+- name: Copy Nginx Files For Vault Subdomain
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ nginx['confd_dir_path'] }}/{{ domain['vault'] }}.conf"
+  
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes
+
+# NOTE: There is currently no path for LDAP authentication
+# with bitwarden_rs.
+# https://github.com/dani-garcia/bitwarden_rs/pull/677
+- name: Bitwarden Rust Docker Container
+  docker_container:
+    name: vault
+    image: bitwardenrs/server:{{ vault['version'] }}
+    state: started
+    hostname: vault
+    env:
+      WEBSOCKET_ENABLED: 'true' # Required to use websockets
+      SIGNUPS_ALLOWED: 'true'   # set to false to disable signups
+      SIGNUPS_DOMAINS_WHITELIST: "{{ top_level_domain }}"
+      SIGNUPS_VERIFY: 'true'
+      ADMIN_TOKEN: "v73jfsd732jrvbe9adfgjvzdxvuwafgjdfwjfDJDF" 
+      DOMAIN: "https://{{ domain['vault'] }}" 
+    volumes:
+      - "{{ docker_folder_path }}/vault/data/:/data/:rw"
+    restart: yes
+    restart_policy: unless-stopped   
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ vault['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes 
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"

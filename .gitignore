@@ -1,0 +1,5 @@
+# Files/folders to ignore in git
+support_material/
+users.yml
+notes.md
+.DS_Store

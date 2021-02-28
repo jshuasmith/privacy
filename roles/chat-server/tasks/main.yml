@@ -1,0 +1,44 @@
+---
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ chat_server['directories'] }}"
+
+- name: Copy Homeserver.yaml File For Synapse Configuration
+  template:
+    src: homeserver.yaml.j2
+    dest: "{{ docker_folder_path }}/chat-server/data/homeserver.yaml"
+
+- name: Run Synapse Config Generator 
+  command: docker run -it --rm -v "{{ docker_folder_path }}/chat-server/data/:/data:rw" -e SYNAPSE_SERVER_NAME={{ domain['x'] }} -e SYNAPSE_REPORT_STATS=yes matrixdotorg/synapse:{{ chat_server['version'] }} generate
+  
+- name: Start Riot.im Synapse Container
+  docker_container:
+    name: chat-server
+    image: "matrixdotorg/synapse:{{ chat_server['version'] }}"
+    state: started
+    hostname: chat-server
+    domainname: "{{ top_level_domain }}"
+    restart: yes   
+    restart_policy: unless-stopped   
+    volumes:
+      - "{{ docker_folder_path }}/chat-server/data/:/data:rw"
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ chat_server['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes        
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+- name: Copy Nginx Files For Chat Subdomain
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ nginx['confd_dir_path'] }}/{{ domain['x'] }}.conf"
+
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes

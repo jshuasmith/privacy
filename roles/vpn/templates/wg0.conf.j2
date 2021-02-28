@@ -1,0 +1,7 @@
+[Interface]
+Address = {{ vpn['vpn_ip'] }}/{{ vpn['netmask'] }}
+SaveConfig = true
+ListenPort = {{ vpn['port'] }}
+PrivateKey = {{ vpn_private_key['stdout'] }}
+PostUp     = iptables -t nat -A POSTROUTING -s {{ vpn['internal_subnet'] }}/{{ vpn['netmask'] }} -o eth0 -j MASQUERADE
+PostDown   = iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE

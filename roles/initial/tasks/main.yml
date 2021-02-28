@@ -1,0 +1,151 @@
+- name: Set the Hostname of the Server
+  hostname:
+    name: "{{ host['name'] }}"
+
+- name: Create a Cron Job To Update & Reboot Weekly
+  cron:
+    name: yum_update_and_reboot
+    weekday: "7"
+    minute: "5"
+    hour: "8"
+    user: root
+    job: "yum update -y && /usr/sbin/reboot >> /var/log/reboot.log 2>&1"
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Create a Cron Job To Update & Reboot Weekly
+  cron:
+    name: update_and_reboot
+    weekday: "7"
+    minute: "5"
+    hour: "8"
+    user: root
+    job: "apt update -y && apt upgrade -y && apt autoremove -y && /usr/sbin/reboot >> /var/log/reboot.log 2>&1"
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+
+- name: Update Apt-Get Repo and Cache
+  apt: 
+    update_cache: yes 
+    force_apt_get: yes 
+    cache_valid_time: 3600
+  when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+
+- name: Upgrade All Packages
+  package:
+    name: '*'
+    state: latest
+
+- name: Install epel-release Package
+  yum:
+    name: 
+      - epel-release
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+
+- name: Create Custom Bash Profile Settings File With Contents (global)
+  copy:
+    dest: "/etc/profile.d/custom.sh"
+    content: |
+                #!/bin/bash
+
+                export HISTTIMEFORMAT="%Y.%m.%d_%T "
+                #if [[ -z "$TMUX" ]] && [ "$SSH_CONNECTION" != "" ]; then
+                #  tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux
+                #fi 
+
+- name: Install Base Packages
+  package:
+    name: "{{ item }}"
+    state: latest 
+  loop:
+    - 'vim'
+    - 'screen'
+    - 'tmux'
+    
+- name: Remove the Postfix package
+  package:
+    name: postfix
+    state: absent   
+
+- name: Make Sure firewalld Service is Running
+  systemd:
+    state: started
+    name: firewalld
+    enabled: yes
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+
+- name: Copy tmux.conf File
+  copy:
+    src: tmux.conf
+    dest: /etc/tmux.conf
+    backup: yes 
+
+- name: Install Secondary Packages
+  package:
+    name: "{{ item }}"
+    state: latest
+  loop:
+    - 'fail2ban'
+    - 'htop'
+    - 'git'
+    - 'ansible'
+    - 'p7zip'
+
+- name: Make Sure we Have a 'wheel' Group
+  group:
+    name: wheel
+    state: present
+  
+- name: Allow 'wheel' Group to Have Passwordless Sudo
+  lineinfile:
+    dest: /etc/sudoers
+    state: present
+    regexp: '^%wheel'
+    line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+    validate: 'visudo -cf %s'
+
+- name: Add the User {{ host['username'] }} With a Primary Group of 'wheel'
+  user:
+    name: "{{ host['username'] }}"
+    comment: User
+    group: wheel
+    generate_ssh_key: yes
+    ssh_key_bits: 2048
+    ssh_key_file: .ssh/id_rsa
+
+# - name: Set swap_file variable
+#   set_fact:
+#     swap_file: "{{ swap_file_path }}"
+
+- name: Check if Swap File Exists
+  stat:
+    path: "{{ host['swap_file_path'] }}"
+  register: swap_file_check
+
+- name: Create Swap File
+  command: dd if=/dev/zero of={{ host['swap_file_path'] }} count={{ host['swap_file_size'] }}000 bs=1MiB 
+  when: not swap_file_check.stat.exists
+
+- name: Change Swap File Permissions
+  file: path="{{ host['swap_file_path'] }}"
+        owner=root
+        group=root
+        mode=0600
+
+- name: Format Swap File
+  command: "mkswap {{ host['swap_file_path'] }}"
+  when: not swap_file_check.stat.exists
+
+- name: Write Swap Entry in fstab
+  mount: 
+    name: none
+    src: "{{ host['swap_file_path'] }}"
+    fstype: swap
+    opts: sw
+    passno: "0"
+    dump: "0"
+    state: present
+
+- name: Turn on Swap
+  command: swapon {{ host['swap_file_path'] }}
+  when: not swap_file_check.stat.exists

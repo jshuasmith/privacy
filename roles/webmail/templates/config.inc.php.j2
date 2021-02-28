@@ -1,0 +1,28 @@
+<?php
+    $config['db_dsnw'] = 'pgsql://{{ postgres['user'] }}:{{ postgres['password'] }}@{{ postgres['ip'] }}:5432/{{ webmail['database_name'] }}';
+    $config['db_dsnr'] = '';
+    $config['default_host'] = 'tls://{{ top_level_domain }}';
+    $config['default_port'] = '143';
+    $config['smtp_server'] = 'tls://{{ top_level_domain }}';
+    $config['smtp_port'] = '587';
+    $config['des_key'] = '{{ webmail['des_key'] }}';
+    $config['temp_dir'] = '/tmp/roundcube-temp';
+    $config['plugins'] = ['archive', 'zipdownload'];
+    $config['zipdownload_selection'] = true;
+    $config['log_driver'] = 'stdout';
+    $config['skin'] = 'elastic';
+    $config['imap_conn_options'] = array(
+        'ssl' => array(
+          'verify_peer_name'  => false,
+          'verify_peer'       => false,
+        ),
+    );
+    $config['skin_logo'] = array(
+     "elastic:login[small]" => "",
+     "elastic:login" => "",
+     "elastic:*[small]" => "",
+     "login" => "",
+     "[print]" => "",
+     "[favicon]" => "",
+   );
+   $config['product_name'] = '{{ domain['mail'] }}';

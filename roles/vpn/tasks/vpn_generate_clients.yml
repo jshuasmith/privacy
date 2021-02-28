@@ -1,0 +1,51 @@
+- name: Prepare VPN Profiles 
+  block: 
+    - name: Create a directory if it does not exist
+      file:
+        path: "{{ vpn['client_configs'] }}/{{ vpn_profile_item.key }}"
+        state: directory
+      tags: [ "account_create" ]
+      
+    - name: Create Wireguard Private Key
+      shell: "wg genkey" 
+      register: vpn_private_key
+      tags: [ "account_create" ]
+
+    - name: Write Wireguard Private Key File
+      copy:
+        dest: "{{ vpn['client_configs'] }}/{{ vpn_profile_item.key }}/private.key"
+        content: "{{ vpn_private_key['stdout'] }}"
+        mode: 0600
+      tags: [ "account_create" ]
+
+    - name: Create Wireguard Public Key
+      shell: "echo {{ vpn_private_key['stdout'] }} | wg pubkey" 
+      register: vpn_public_key
+      tags: [ "account_create" ]
+
+    - name: Write Wireguard Public Key File
+      copy:
+        dest: "{{ vpn['client_configs'] }}/{{ vpn_profile_item.key }}/public.key"
+        content: "{{ vpn_public_key['stdout'] }}"
+      tags: [ "account_create" ]
+
+    - name: Copy Wireguard Client Config File
+      template:
+        src: "wg_client.conf.j2"
+        dest: "{{ vpn['client_configs'] }}/{{ vpn_profile_item.key }}/{{ vpn_profile_item.key }}.conf"
+      tags: [ "account_create" ]
+
+    - name: Add Wireguard Client Config To Wireguard Server Conf
+      blockinfile:
+        path: "{{ vpn['config_file'] }}"
+        marker: ""
+        marker_begin: ""
+        marker_end: ""
+        block: |
+          [Peer]
+          PublicKey = {{ vpn_public_key['stdout'] }}
+          AllowedIPs = {{ vpn_profile_item.value.ip }}/32
+      
+      tags: [ "account_create" ]
+           
+

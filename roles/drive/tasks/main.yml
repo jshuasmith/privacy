@@ -1,0 +1,143 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ nextcloud['directories'] }}"
+
+- name: Nextcloud Docker Container
+  docker_container:
+    name: nextcloud
+    image: nextcloud:{{ nextcloud['version'] }}
+    state: started
+    hostname: drive
+    volumes:
+      - "{{ docker_folder_path }}/drive/data/:/var/www/html:rw"
+      - "{{ docker_folder_path }}/drive/skeleton/:{{ nextcloud['skeleton_dir'] }}:rw"
+    env:
+      POSTGRES_DB: 'nextcloud'
+      POSTGRES_USER: "{{ postgres['user'] }}"
+      POSTGRES_PASSWORD: "{{ postgres['password'] }}"
+      POSTGRES_HOST: "{{ postgres['ip'] }}"
+      NEXTCLOUD_ADMIN_USER: "{{ nextcloud['admin_user'] }}"
+      NEXTCLOUD_ADMIN_PASSWORD: "{{ nextcloud['admin_password'] }}"
+      NEXTCLOUD_TRUSTED_DOMAINS: "{{ domain['drive'] }}"
+      APACHE_DISABLE_REWRITE_IP: "1"
+      TRUSTED_PROXIES: "{{ docker_network['subnet'] }}"
+    restart: yes
+    restart_policy: unless-stopped   
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ nextcloud['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes        
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+- name: Copy Nginx Files For Drive Subdomain
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ nginx['confd_dir_path'] }}/{{ domain['drive'] }}.conf"
+
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes
+
+- name: Wait for Nextcloud to Respond
+  uri:
+    url: "http://{{ nextcloud['ip'] }}:80"
+    status_code: 400
+  register: result
+  until: result.status == 400
+  retries: 60
+  delay: 5
+
+# https://liquidat.wordpress.com/2015/06/16/howto-owncloud-auto-setup-including-ldap/
+- name: Enable LDAP Role
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ app:enable user_ldap"
+
+- name: Initialize LDAP Config
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:create-empty-config"
+
+- name: Configure LDAP Host
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapHost {{ openldap['ip'] }}"
+
+- name: Configure LDAP Port
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapPort 389"
+
+- name: Configure LDAP Bind User
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapAgentName \"cn=admin,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}\""
+
+- name: Configure LDAP Bind Password
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapAgentPassword \"{{ openldap['admin_password'] }}\""
+
+- name: Configure LDAP Base Path
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapBase \"dc={{ ldap['name'] }},dc={{ ldap['tld'] }}\""
+
+- name: Configure LDAP Base User Path 
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapBaseUsers \"ou=users,dc={{ ldap['name'] }},dc={{ ldap['tld'] }}\""
+
+- name: Configure LDAP Login Filter 
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapLoginFilter \"(&(|(objectclass=inetOrgPerson))(|(uid=%uid)))\""
+
+- name: Configure LDAP Login Filter Attributes
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapLoginFilterAttributes \"uid\""
+
+- name: Configure LDAP User Filter 
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapUserFilter \"(|(objectclass=inetOrgPerson))\""
+
+- name: Enable LDAP Config 
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ldap:set-config s01 ldapConfigurationActive 1"
+
+- name: Install NextCloud Talk App
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ app:install spreed"  
+  register: talk_command_result
+  failed_when: "'Fatal error' in talk_command_result.stdout"
+  ignore_errors: yes
+
+- name: Enable NextCloud Talk if Install Failed
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ app:enable spreed"
+  when: talk_command_result is failed
+
+- name: Install NextCloud MFA App
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ app:install twofactor_totp"  
+  register: mfa_command_result
+  failed_when: "'Fatal error' in mfa_command_result.stdout"
+  ignore_errors: yes
+
+- name: Install NextCloud Maps App
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ app:install maps"  
+  register: maps_command_result
+  failed_when: "'Fatal error' in maps_command_result.stdout"
+  ignore_errors: yes
+
+- name: Install NextCloud Calendar App
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ app:install calendar"  
+  register: calendar_command_result
+  failed_when: "'Fatal error' in calendar_command_result.stdout"
+  ignore_errors: yes
+
+- name: Install NextCloud Contacts App
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ app:install contacts"  
+  register: contacts_command_result
+  failed_when: "'Fatal error' in contacts_command_result.stdout"
+  ignore_errors: yes
+
+- name: Install NextCloud Tasks App
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ app:install tasks"  
+  register: tasks_command_result
+  failed_when: "'Fatal error' in tasks_command_result.stdout"
+  ignore_errors: yes
+
+- name: Configure Nextcloud Theme
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ config:app:set theming name --value \"{{ domain['drive'] }}\""  
+  ignore_errors: yes
+
+- name: Configure Nextcloud Theme
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ config:app:set theming url --value \"{{ domain['drive'] }}\""  
+  ignore_errors: yes
+
+- name: Configure Nextcloud Theme
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ config:app:set theming slogan --value ''"  
+  ignore_errors: yes

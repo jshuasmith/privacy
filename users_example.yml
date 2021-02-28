@@ -1,0 +1,23 @@
+users:
+  # EXAMPLE USER ENTRY
+  ## This is the user name (user.name). 
+  ## user.name, id, all ip addresses and mail_alias' must be unique. 
+  ## Start id at 5000 and increment up. 
+  ## ip's must be in 10.4.22.0/24 range unless you modify the VPN config. 
+  # user.name:
+  #   first_name: First 
+  #   last_name: Last
+  #   id: 5000
+  #   password: Password goes here.
+  #   vpn_profiles:
+  #     user.name.phone:
+  #       ip: 10.4.22.100
+  #     user.name.laptop:
+  #       ip: 10.4.22.101
+  #   mail_alias:
+  #     - user.name@domain.com
+  #     - user@domain.com 
+  #     - u@domain.com 
+  #     - certificate-reminders@domain.com
+  #     - postmaster@domain.com
+  #     - dmarcreports@domain.com
