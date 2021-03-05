@@ -1,7 +1,7 @@
 - name: Setup Watchtower Upgrade Container
   docker_container:
     name: upgrade
-    image: v2tec/watchtower:{{ upgrade['version'] }}
+    image: containrrr/watchtower:{{ upgrade['version'] }}
     hostname: upgrade.{{ top_level_domain }}
     restart_policy: unless-stopped   
     volumes:

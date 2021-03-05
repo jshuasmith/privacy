@@ -13,7 +13,7 @@ I wanted more control of my information and for big companies to have less insig
 | Database | Postgres  | https://www.postgresql.org/ | 
 | File Storage, Contacts, and Calendar | Nextcloud  | https://nextcloud.com/ | 
 | Chat | Element  | https://element.io/ | 
-| Password Management | Bitwarden  | https://bitwarden.com/ | 
+| Password Management | Bitwarden  | https://github.com/dani-garcia/bitwarden_rs | 
 | DNS | Pi-hole  | https://pi-hole.net/ | 
 | Logging | Elastic Auditbeat  | https://www.elastic.co/beats/auditbeat | 
 | Git | Gitea  | https://gitea.io/ | 
@@ -24,7 +24,7 @@ I wanted more control of my information and for big companies to have less insig
 | Notes | Joplin  | https://joplinapp.org/ | 
 | Browser | Brave  | https://brave.com/ | 
 | Containers | Docker | https://www.docker.com/ | 
-| Container Upgrades | Watchtower | https://hub.docker.com/r/v2tec/watchtower |
+| Container Upgrades | Watchtower | https://containrrr.dev/watchtower/ |
 | Deployment Automation | Ansible | https://www.ansible.com/ | 
 | Certificate Renewals | Acme Tiny | https://github.com/diafygi/acme-tiny |  
 
@@ -93,6 +93,8 @@ Many thanks to all the people who have contributed to the awesome open source pr
 | TXT | @ | v=spf1 mx ~all | SPF |
 | TXT | mail._domainkey | v=DKIM1;h=sha256;k=rsa;p=MIIB ...snip... QAB | DKIM |
 | TXT | _dmarc | v=DMARC1;p=quarantine;sp=quarantine;pct=100;rua=mailto:dmarcreports@your.domain.name; | DMARC |
+
+**NOTE**: Value for DKIM TXT record should be located at `/<root_path>/mail/config/opendkim/keys/<domain.com>/mail.txt` on the target host.
 
 ## To Do 
 --------
