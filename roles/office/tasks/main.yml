@@ -1,0 +1,53 @@
+- name: Create Required Directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop: "{{ office['directories'] }}"
+
+- name: Office Docker Container
+  docker_container:
+    name: office
+    image: onlyoffice/documentserver:{{ office['version'] }}
+    state: started
+    hostname: office
+    volumes:
+      - "{{ docker_folder_path }}/office/data/:/var/www/onlyoffice/Data:rw"
+      - "{{ docker_folder_path }}/office/logs/:/var/log/onlyoffice:rw"
+    restart: yes
+    recreate: yes
+    restart_policy: unless-stopped   
+    networks:
+      - name: "{{ docker_network['name'] }}"
+        ipv4_address: "{{ office['ip'] }}"
+    purge_networks: yes
+    networks_cli_compatible: yes        
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+  tags: [ "upgrade" ]
+
+- name: Install OnlyOffice Integration with Nextcloud
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ --no-warnings app:install onlyoffice"
+  ignore_errors: yes
+
+- name: Set External Office URL 
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ --no-warnings config:system:set onlyoffice DocumentServerUrl --value=\"https://{{ domain['office'] }}\""
+  ignore_errors: yes
+
+- name: Set Office URL for Nextcloud 
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ --no-warnings config:system:set onlyoffice DocumentServerInternalUrl --value=\"http://office\""
+  ignore_errors: yes
+
+- name: Set Drive URL for Nextcloud 
+  command: "docker exec -u www-data -it nextcloud /var/www/html/occ ---no-warnings config:system:set onlyoffice StorageUrl --value=\"http://drive/\""
+  ignore_errors: yes
+  
+- name: Copy Nginx Files For Office Subdomain
+  template:
+    src: generic.nginx.conf.j2
+    dest: "{{ nginx['confd_dir_path'] }}/{{ domain['office'] }}.conf"
+
+- name: Restart Nginx Container
+  docker_container:
+    name: nginx
+    state: started
+    restart: yes

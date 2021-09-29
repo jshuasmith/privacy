@@ -50,6 +50,8 @@
       # auth: auth.{{ top_level_domain }}
       # Git Domain
       git: git.{{ top_level_domain }}
+      # Office Domain
+      office: office.{{ top_level_domain }}
         
     docker:
       username: user
@@ -71,7 +73,7 @@
       iprange: 172.16.10.0/25   
       
     postgres:
-      version: "12.4" # Originally based on 12.3
+      version: "12.7" # Originally based on 12.3
       password: "{{ lookup('password', 'support_material/credentials/password_postgres.txt length=16 chars=ascii_letters,digits') }}"
       user: privacy
       ip: 172.16.10.14
@@ -81,7 +83,7 @@
         - "{{ docker_folder_path }}/postgres/init_scripts"
 
     nginx:
-      version: "1.19.6" # Originally based on 1.19.0
+      version: "1.21.1" # Originally based on 1.19.0
       ip: 172.16.10.15
       html_dir_path: "{{ docker_folder_path }}/nginx/html"
       confd_dir_path: "{{ docker_folder_path }}/nginx/conf.d"
@@ -118,6 +120,7 @@
         - "{{ domain['chat'] }}"
         - "{{ domain['x'] }}"
         - "{{ domain['git'] }}"
+        - "{{ domain['office'] }}"
 
       directories:
         - "{{ docker_folder_path }}/letsencrypt/keys"
@@ -150,7 +153,7 @@
       bind_pw: "{{ openldap['admin_password'] }}"
 
     mailserver:
-      version: "release-v7.2.0" # Orginally based on release-v6.2.2
+      version: "10.1.2" # Orginally based on release-v6.2.2
       ip: 172.16.10.16
       config_dir_path: "{{ docker_folder_path }}/mail/config"
       backup_dir: "{{ docker_folder_path }}/mail/maildata"
@@ -184,7 +187,7 @@
 
     nextcloud:
       ip: 172.16.10.20
-      version: "20.0.3-apache" # Originally based on 18.0.6
+      version: "22.1.0-apache" # Originally based on 18.0.6
       admin_user: privacy
       admin_password: "{{ lookup('password', 'support_material/credentials/password_nextcloud_admin.txt length=16 chars=ascii_letters,digits') }}"
       backup_dir: "{{ docker_folder_path }}/drive/data/data"
@@ -196,10 +199,21 @@
         - '{{ docker_folder_path }}/drive/files'
         - '{{ docker_folder_path }}/drive/skeleton'
 
+    office:
+      ip: 172.16.10.28
+      version: "6.4.0.121" # Originally based on 6.4.0.121 
+      jwt_secret: "{{ lookup('password', 'support_material/credentials/password_office_jwt_secret.txt length=16 chars=ascii_letters,digits') }}"
+      directories:
+        - '{{ docker_folder_path }}/office'
+        - '{{ docker_folder_path }}/office/config'
+        - '{{ docker_folder_path }}/office/data'
+        - '{{ docker_folder_path }}/office/logs'
+
     vault:
       ip: 172.16.10.21
-      version: "1.17.0" # Orginally based on 1.15.1
+      version: "1.22.2" # Orginally based on 1.15.1
       backup_dir: "{{ docker_folder_path }}/vault/data"
+      token: "{{ lookup('password', 'support_material/credentials/vault_token.txt length=41 chars=ascii_letters,digits') }}"
       directories:
         - '{{ docker_folder_path }}/vault'
         - '{{ docker_folder_path }}/vault/config'
@@ -217,7 +231,7 @@
 
     vpn:
       ip: 172.16.10.23
-      version: "0.0.20201118"
+      version: "0.0.20210424" # Origininally based on "0.0.20201118"
       vpn_ip: "10.4.22.1"
       port: "500"
       peers: "10"
@@ -245,7 +259,7 @@
     vpn_profiles_combined_list: []
 
     auditbeat:
-      version: 7.10.1 # No "latest" tag available.
+      version: "7.14.0" # No "latest" tag available.
       ip: 172.16.10.24
       directories:
         - '{{ docker_folder_path }}/auditbeat'
@@ -254,7 +268,7 @@
         - '{{ docker_folder_path }}/auditbeat/logs'
 
     dns:
-      version: "v5.2.1" # Originally based on v5.0
+      version: "v5.8.1" # Originally based on v5.0
       timezone: "America/Chicago"
       ip: 172.16.10.25
       # Cloudflare DNS Servers
@@ -271,7 +285,7 @@
         - '{{ docker_folder_path }}/dns/dnsmasq'
 
     git:
-      version: "latest"
+      version: "1.14.6"
       ip: 172.16.10.26
       secret_key: "{{ lookup('password', 'support_material/credentials/password_git_secret_key.txt length=16 chars=ascii_letters,digits') }}"
       data_dir: "{{ docker_folder_path }}/git/data/"
@@ -283,7 +297,7 @@
         - '{{ docker_folder_path }}/git/backups'
 
     webmail:
-      version: "1.4.9-apache"
+      version: "1.4.11-apache" # Originally based on "1.4.9-apache"
       ip: 172.16.10.27
       database_name: "roundcube"
       des_key: "{{ lookup('password', 'support_material/credentials/password_webmail_des_key.txt length=24 chars=ascii_letters,digits') }}"
@@ -313,6 +327,7 @@
   - mail 
   - postgres
   - drive
+  - office
   - chat-server 
   - chat-web 
   - vault
@@ -320,7 +335,7 @@
   - web
   - webmail
   - vpn
-  - auditbeat
+  - auditbeat 
   - git
   - upgrade
   - role: backup

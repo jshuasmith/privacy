@@ -12,6 +12,7 @@ I wanted more control of my information and for big companies to have less insig
 | Authentication | OpenLDAP  | https://www.openldap.org/ | 
 | Database | Postgres  | https://www.postgresql.org/ | 
 | File Storage, Contacts, and Calendar | Nextcloud  | https://nextcloud.com/ | 
+| Office Document Editor | OnlyOffice | https://www.onlyoffice.com/ | 
 | Chat | Element  | https://element.io/ | 
 | Password Management | Bitwarden  | https://github.com/dani-garcia/bitwarden_rs | 
 | DNS | Pi-hole  | https://pi-hole.net/ | 
@@ -62,7 +63,8 @@ Many thanks to all the people who have contributed to the awesome open source pr
     - `drive.<domain.com>`
     - `chat.<domain.com>`
     - `x.<domain.com>`
-    - `git.<domain.com>`  
+    - `git.<domain.com>` 
+    - `office.<domain.com>`
 8. Execute `ansible-playbook -i hosts site.yml`
 9. All relevant output (passwords, VPN profiles, etc.) will be saved to the `support_material` directory in appropriate directories. 
 
